@@ -5,16 +5,13 @@ const multer = require('multer');
 const cors = require('cors');
 
 const app = express();
-const PORT = 3001; // Puerto configurado para tu frontend
+const PORT = 3001;
 
 // --------------------------------------------------------
 // 0. CONFIGURACIÓN INICIAL
 // --------------------------------------------------------
-
-// Habilitar CORS para recibir peticiones desde tu Next.js/React
 app.use(cors());
 
-// Asegurar que la carpeta 'images' exista físicamente
 const imagesDir = path.join(__dirname, 'images');
 if (!fs.existsSync(imagesDir)) {
     fs.mkdirSync(imagesDir);
@@ -22,23 +19,42 @@ if (!fs.existsSync(imagesDir)) {
 }
 
 // --------------------------------------------------------
-// 1. CONFIGURACIÓN DE MULTER (SUBIDA DE ARCHIVOS)
+// 1. CONFIGURACIÓN DE MULTER (MODIFICADO)
 // --------------------------------------------------------
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, imagesDir); // Usamos la ruta absoluta definida arriba
+        cb(null, imagesDir);
     },
     filename: (req, file, cb) => {
-        // Generar nombre único: Timestamp + Random + NombreOriginal
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname);
+        // 1. Obtenemos la extensión del archivo original (.pdf, .jpg, etc.)
+        const ext = path.extname(file.originalname);
+
+        // 2. Buscamos si viene un nombre personalizado en el cuerpo de la petición
+        // NOTA: En el frontend, debes hacer append del nombre ANTES que del archivo
+        let customName = req.body.fullname;
+
+        if (customName && customName.trim() !== "") {
+            // 3. CASO: SI HAY NOMBRE PERSONALIZADO
+            // Limpiamos el nombre para evitar errores en Windows/Linux (quitamos caracteres raros)
+            const cleanName = customName
+                .trim()
+                .replace(/\s+/g, '_')        // Espacios -> guiones bajos
+                .replace(/[^a-zA-Z0-9_-]/g, ''); // Solo letras, números, _ y -
+
+            // Guardamos con el nombre limpio + la extensión original
+            cb(null, `${cleanName}${ext}`);
+        } else {
+            // 4. CASO: NO HAY NOMBRE (Aleatorio)
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            cb(null, uniqueSuffix + '-' + file.originalname);
+        }
     }
 });
 
 const upload = multer({
     storage: storage,
     fileFilter: (req, file, cb) => {
-        // Validar extensiones de imagen
+        // Validar extensiones (incluyendo PDF)
         const filetypes = /jpeg|jpg|png|gif|webp|pdf/;
         const mimetype = filetypes.test(file.mimetype);
         const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
@@ -46,7 +62,7 @@ const upload = multer({
         if (mimetype && extname) {
             return cb(null, true);
         }
-        cb(new Error("Error: Solo se permiten imágenes (jpg, png, gif, webp)"));
+        cb(new Error("Error: Solo se permiten imágenes y PDF"));
     }
 });
 
@@ -54,31 +70,26 @@ const upload = multer({
 // 2. RUTAS Y ENDPOINTS
 // --------------------------------------------------------
 
-// A) Servir carpeta estática (Para ver las fotos en el navegador)
 app.use('/imagenes', express.static(imagesDir));
 
-
-// B) ENDPOINT POST: Subir imagen
 app.post('/api/subir', upload.single('foto'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No se subió ningún archivo.' });
     }
 
     res.json({
-        mensaje: 'Imagen guardada con éxito',
+        mensaje: 'Archivo guardado con éxito',
         archivo: req.file.filename,
-        // Generamos la URL pública completa
+        // Usamos req.body.fullname para confirmar si se usó el nombre personalizado o no
+        nombre_usado: req.file.filename,
         url: `${req.protocol}://${req.get('host')}/imagenes/${req.file.filename}`
     });
 });
 
-
-// C) ENDPOINT GET: Listar todas las imágenes
 app.get('/api/imagenes', (req, res) => {
     fs.readdir(imagesDir, (err, files) => {
         if (err) return res.status(500).json({ error: 'Error al leer la carpeta' });
 
-        // Agregamos |pdf| al filtro regex
         const response = files
             .filter(file => /\.(jpg|jpeg|png|gif|webp|pdf)$/i.test(file))
             .map(file => ({
@@ -90,17 +101,14 @@ app.get('/api/imagenes', (req, res) => {
     });
 });
 
-// D) ENDPOINT GET: Detalles de 1 sola imagen
 app.get('/api/imagenes/:nombre', (req, res) => {
     const nombreImagen = req.params.nombre;
     const rutaCompleta = path.join(imagesDir, nombreImagen);
 
-    // Verificar si existe
     fs.access(rutaCompleta, fs.constants.F_OK, (err) => {
         if (err) {
-            return res.status(404).json({ error: 'La imagen no existe' });
+            return res.status(404).json({ error: 'El archivo no existe' });
         }
-
         res.json({
             nombre: nombreImagen,
             url: `${req.protocol}://${req.get('host')}/imagenes/${nombreImagen}`,
@@ -113,10 +121,5 @@ app.get('/api/imagenes/:nombre', (req, res) => {
 // 3. INICIAR SERVIDOR
 // --------------------------------------------------------
 app.listen(PORT, () => {
-    console.log(`--------------------------------------------------`);
-    console.log(`✅ Servidor de Imágenes listo en el puerto ${PORT}`);
-    console.log(`   ➜ Subir:   http://localhost:${PORT}/api/subir`);
-    console.log(`   ➜ Listar:  http://localhost:${PORT}/api/imagenes`);
-    console.log(`   ➜ Carpeta: ${imagesDir}`);
-    console.log(`--------------------------------------------------`);
+    console.log(`✅ Servidor listo en puerto ${PORT}`);
 });
