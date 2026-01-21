@@ -76,13 +76,11 @@ app.post('/api/subir', upload.single('foto'), (req, res) => {
 // C) ENDPOINT GET: Listar todas las imágenes
 app.get('/api/imagenes', (req, res) => {
     fs.readdir(imagesDir, (err, files) => {
-        if (err) {
-            return res.status(500).json({ error: 'Error al leer la carpeta' });
-        }
+        if (err) return res.status(500).json({ error: 'Error al leer la carpeta' });
 
-        // Filtramos para mostrar solo imágenes y construimos la URL
+        // Agregamos |pdf| al filtro regex
         const response = files
-            .filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file))
+            .filter(file => /\.(jpg|jpeg|png|gif|webp|pdf)$/i.test(file))
             .map(file => ({
                 nombre: file,
                 url: `${req.protocol}://${req.get('host')}/imagenes/${file}`
@@ -91,7 +89,6 @@ app.get('/api/imagenes', (req, res) => {
         res.json(response);
     });
 });
-
 
 // D) ENDPOINT GET: Detalles de 1 sola imagen
 app.get('/api/imagenes/:nombre', (req, res) => {
